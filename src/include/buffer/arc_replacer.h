@@ -28,6 +28,8 @@ enum class AccessType { Unknown = 0, Lookup, Scan, Index };
 
 enum class ArcStatus { MRU, MFU, MRU_GHOST, MFU_GHOST };
 
+enum class Where { ALIVE, GHOST};
+
 // TODO(student): You can modify or remove this struct as you like.
 struct FrameStatus {
   page_id_t page_id_;
@@ -59,9 +61,7 @@ class ArcReplacer {
   void SetEvictable(frame_id_t frame_id, bool set_evictable);
   void Remove(frame_id_t frame_id);
   auto Size() -> size_t;
-
  private:
-  // TODO(student): implement me! You can replace or remove these member variables as you like.
   std::list<frame_id_t> mru_;
   std::list<frame_id_t> mfu_;
   std::list<page_id_t> mru_ghost_;
@@ -76,6 +76,14 @@ class ArcReplacer {
    * identifier in ghost lists */
   std::unordered_map<page_id_t, std::shared_ptr<FrameStatus>> ghost_map_;
 
+  /*
+   * optimize
+   */
+  std::unordered_map<frame_id_t, std::list<frame_id_t>::iterator> mru_map_;
+  std::unordered_map<frame_id_t, std::list<frame_id_t>::iterator> mfu_map_;
+  std::unordered_map<page_id_t, std::list<page_id_t>::iterator> mru_ghost_map_;
+  std::unordered_map<page_id_t, std::list<page_id_t>::iterator> mfu_ghost_map_;
+
   /* alive, evictable entries count */
   [[maybe_unused]] size_t curr_size_{0};
   /* p as in original paper */
@@ -84,7 +92,22 @@ class ArcReplacer {
   [[maybe_unused]] size_t replacer_size_;
   std::mutex latch_;
 
-  // TODO(student): You can add member variables / functions as you like.
+  auto LookUp(frame_id_t frame_id, page_id_t page_id) const -> std::shared_ptr<FrameStatus>;
+  auto LookUpGhost(frame_id_t frame_id, page_id_t page_id) const -> std::shared_ptr<FrameStatus>;
+  void Move2First(frame_id_t frame_id);
+  void MoveGhost2First(frame_id_t frame_id, page_id_t page_id);
+
+  auto TryGetEvictableFrom(std::list<frame_id_t>& l) -> std::optional<frame_id_t>;
+  void RemoveFrom(frame_id_t frame_id,
+    std::list<frame_id_t>& l,
+    std::unordered_map<page_id_t, std::list<page_id_t>::iterator>& mp);
+  void Move2Ghost(
+    frame_id_t frame_id,
+    page_id_t page_id,
+    std::list<page_id_t> &l,
+    std::unordered_map<page_id_t, std::list<page_id_t>::iterator> &mp
+  );
+  void DumpState();
 };
 
 }  // namespace bustub
