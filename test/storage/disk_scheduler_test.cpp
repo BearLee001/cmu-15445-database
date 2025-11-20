@@ -19,12 +19,14 @@
 #include "storage/disk/disk_manager_memory.h"
 #include "storage/disk/disk_scheduler.h"
 
+#include "fmt/ostream.h"
+
 namespace bustub {
 
 using bustub::DiskManagerUnlimitedMemory;
 
 // NOLINTNEXTLINE
-TEST(DiskSchedulerTest, DISABLED_ScheduleWriteReadPageTest) {
+TEST(DiskSchedulerTest, ScheduleWriteReadPageTest) {
   char buf[BUSTUB_PAGE_SIZE] = {0};
   char data[BUSTUB_PAGE_SIZE] = {0};
 
