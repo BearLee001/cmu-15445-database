@@ -13,6 +13,7 @@
 
 #include "buffer/arc_replacer.h"
 #include "common/config.h"
+#include "fmt/xchar.h"
 
 namespace bustub {
 
@@ -77,7 +78,6 @@ auto ArcReplacer::Evict() -> std::optional<frame_id_t> {
     }
   }
   --curr_size_;
-  std::cout << "evict" << std::endl;
   DumpState();
   return removed;
 
@@ -115,11 +115,12 @@ auto ArcReplacer::Evict() -> std::optional<frame_id_t> {
  * leaderboard tests.
  */
 void ArcReplacer::RecordAccess(frame_id_t frame_id, page_id_t page_id, [[maybe_unused]] AccessType access_type) {
+  latch_.lock();
   if (LookUp(frame_id, page_id) != nullptr) {
     // hit alive
-    std::cout << "hit alive" << std::endl;
     Move2First(frame_id);
     DumpState();
+    latch_.unlock();
     return;
   }
 
@@ -134,9 +135,9 @@ void ArcReplacer::RecordAccess(frame_id_t frame_id, page_id_t page_id, [[maybe_u
         mru_target_size_ += mfu_ghost_.size() / mru_ghost_.size();
         mru_target_size_ = mru_target_size_ > replacer_size_ ? replacer_size_ : mru_target_size_;
       }
-      std::cout << "hit ghost" << std::endl;
       MoveGhost2First(frame_id, page_id);
       DumpState();
+      latch_.unlock();
       return;
     }
 
@@ -149,15 +150,15 @@ void ArcReplacer::RecordAccess(frame_id_t frame_id, page_id_t page_id, [[maybe_u
         mru_target_size_ -= mru_ghost_.size() / mfu_ghost_.size();
         mru_target_size_ = mru_target_size_ <= 0 ? 0 : mru_target_size_;
       }
-      std::cout << "hit ghost" << std::endl;
       MoveGhost2First(frame_id, page_id);
       DumpState();
+      latch_.unlock();
       return;
     }
+    latch_.unlock();
     throw std::runtime_error("Unexpected state(2)");
   }
 
-  std::cout << "miss" << std::endl;
   // miss
   if (mru_.size() + mru_ghost_.size() == replacer_size_) {
     // kill last mru_ghost element
@@ -188,6 +189,7 @@ void ArcReplacer::RecordAccess(frame_id_t frame_id, page_id_t page_id, [[maybe_u
   }
   ++curr_size_;
   DumpState();
+  latch_.unlock();
 }
 
 /**
@@ -208,6 +210,7 @@ void ArcReplacer::RecordAccess(frame_id_t frame_id, page_id_t page_id, [[maybe_u
  * @param set_evictable whether the given frame is evictable or not
  */
 void ArcReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
+  latch_.lock();
   auto it = alive_map_.find(frame_id);
   if (it != alive_map_.end()) {
     if (it->second->evictable_ == false && set_evictable == true) {
@@ -216,9 +219,8 @@ void ArcReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
       --curr_size_;
     }
     it->second->evictable_ = set_evictable;
-  } else {
-    throw std::runtime_error("Unexpected state(5)");
   }
+  latch_.unlock();
 }
 
 /**
@@ -286,6 +288,8 @@ void ArcReplacer::Move2First(frame_id_t frame_id) {
   auto it = mru_map_.find(frame_id);
   if (it != mru_map_.end()) {
     mru_.erase(it->second);
+    mru_map_.erase(frame_id);
+
     mfu_.emplace_front(frame_id);
     mfu_map_[frame_id] = mfu_.begin();
     return;
@@ -294,6 +298,8 @@ void ArcReplacer::Move2First(frame_id_t frame_id) {
   it = mfu_map_.find(frame_id);
   if (it != mfu_map_.end()) {
     mfu_.erase(it->second);
+    mfu_map_.erase(frame_id);
+
     mfu_.emplace_front(frame_id);
     mfu_map_[frame_id] = mfu_.begin();
     return;
@@ -382,33 +388,35 @@ void ArcReplacer::Move2Ghost(
 /*
  * Note: Used to debug
  */
-void ArcReplacer::DumpState() {
-  std::cout << "mru_list: ";
-  for (auto v: mru_) {
-    std::cout << v << " ";
-  }
-  std::cout << std::endl;
+void ArcReplacer::DumpState(bool debug) {
+  if (debug) {
+    std::cout << "mru_list: ";
+    for (auto v: mru_) {
+      std::cout << v << " ";
+    }
+    std::cout << std::endl;
 
-  std::cout << "mfu_list: ";
-  for (auto v: mfu_) {
-    std::cout << v << " ";
-  }
-  std::cout << std::endl;
+    std::cout << "mfu_list: ";
+    for (auto v: mfu_) {
+      std::cout << v << " ";
+    }
+    std::cout << std::endl;
 
-  std::cout << "mru_ghost_list: ";
-  for (auto v: mru_ghost_) {
-    std::cout << v << " ";
-  }
-  std::cout << std::endl;
+    std::cout << "mru_ghost_list: ";
+    for (auto v: mru_ghost_) {
+      std::cout << v << " ";
+    }
+    std::cout << std::endl;
 
-  std::cout << "mfu_ghost_list: ";
-  for (auto v: mfu_ghost_) {
-    std::cout << v << " ";
-  }
-  std::cout << std::endl;
+    std::cout << "mfu_ghost_list: ";
+    for (auto v: mfu_ghost_) {
+      std::cout << v << " ";
+    }
+    std::cout << std::endl;
 
-  std::cout << "current size = " << curr_size_ << std::endl;
-  std::cout << std::endl;
+    std::cout << "current size = " << curr_size_ << std::endl;
+    std::cout << std::endl;
+  }
 }
 
 }  // namespace bustub

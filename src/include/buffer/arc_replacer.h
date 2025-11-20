@@ -107,7 +107,7 @@ class ArcReplacer {
     std::list<page_id_t> &l,
     std::unordered_map<page_id_t, std::list<page_id_t>::iterator> &mp
   );
-  void DumpState();
+  void DumpState(bool debug = false);
 };
 
 }  // namespace bustub
