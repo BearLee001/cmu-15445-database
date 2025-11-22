@@ -13,6 +13,7 @@
 
 #include "buffer/arc_replacer.h"
 #include "common/config.h"
+#include "fmt/xchar.h"
 
 namespace bustub {
 
@@ -115,9 +116,10 @@ auto ArcReplacer::Evict() -> std::optional<frame_id_t> {
  * leaderboard tests.
  */
 void ArcReplacer::RecordAccess(frame_id_t frame_id, page_id_t page_id, [[maybe_unused]] AccessType access_type) {
+  fmt::println("frame_id = {}, page_id = {}", frame_id, page_id);
   if (LookUp(frame_id, page_id) != nullptr) {
     // hit alive
-    std::cout << "hit alive" << std::endl;
+    fmt::println("hit alive!!!");
     Move2First(frame_id);
     DumpState();
     return;
@@ -286,6 +288,8 @@ void ArcReplacer::Move2First(frame_id_t frame_id) {
   auto it = mru_map_.find(frame_id);
   if (it != mru_map_.end()) {
     mru_.erase(it->second);
+    mru_map_.erase(frame_id);
+
     mfu_.emplace_front(frame_id);
     mfu_map_[frame_id] = mfu_.begin();
     return;
@@ -294,6 +298,8 @@ void ArcReplacer::Move2First(frame_id_t frame_id) {
   it = mfu_map_.find(frame_id);
   if (it != mfu_map_.end()) {
     mfu_.erase(it->second);
+    mfu_map_.erase(frame_id);
+
     mfu_.emplace_front(frame_id);
     mfu_map_[frame_id] = mfu_.begin();
     return;
@@ -383,32 +389,32 @@ void ArcReplacer::Move2Ghost(
  * Note: Used to debug
  */
 void ArcReplacer::DumpState() {
-  std::cout << "mru_list: ";
-  for (auto v: mru_) {
-    std::cout << v << " ";
-  }
-  std::cout << std::endl;
-
-  std::cout << "mfu_list: ";
-  for (auto v: mfu_) {
-    std::cout << v << " ";
-  }
-  std::cout << std::endl;
-
-  std::cout << "mru_ghost_list: ";
-  for (auto v: mru_ghost_) {
-    std::cout << v << " ";
-  }
-  std::cout << std::endl;
-
-  std::cout << "mfu_ghost_list: ";
-  for (auto v: mfu_ghost_) {
-    std::cout << v << " ";
-  }
-  std::cout << std::endl;
-
-  std::cout << "current size = " << curr_size_ << std::endl;
-  std::cout << std::endl;
+  // std::cout << "mru_list: ";
+  // for (auto v: mru_) {
+  //   std::cout << v << " ";
+  // }
+  // std::cout << std::endl;
+  //
+  // std::cout << "mfu_list: ";
+  // for (auto v: mfu_) {
+  //   std::cout << v << " ";
+  // }
+  // std::cout << std::endl;
+  //
+  // std::cout << "mru_ghost_list: ";
+  // for (auto v: mru_ghost_) {
+  //   std::cout << v << " ";
+  // }
+  // std::cout << std::endl;
+  //
+  // std::cout << "mfu_ghost_list: ";
+  // for (auto v: mfu_ghost_) {
+  //   std::cout << v << " ";
+  // }
+  // std::cout << std::endl;
+  //
+  // std::cout << "current size = " << curr_size_ << std::endl;
+  // std::cout << std::endl;
 }
 
 }  // namespace bustub

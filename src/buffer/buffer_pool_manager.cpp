@@ -14,6 +14,7 @@
 #include "buffer/arc_replacer.h"
 #include "common/config.h"
 #include "common/macros.h"
+#include "fmt/ostream.h"
 
 namespace bustub {
 
@@ -117,7 +118,9 @@ auto BufferPoolManager::Size() const -> size_t { return num_frames_; }
  *
  * @return The page ID of the newly allocated page.
  */
-auto BufferPoolManager::NewPage() -> page_id_t { UNIMPLEMENTED("TODO(P1): Add implementation."); }
+auto BufferPoolManager::NewPage() -> page_id_t {
+  return next_page_id_.fetch_add(1);
+}
 
 /**
  * @brief Removes a page from the database, both on disk and in memory.
@@ -138,7 +141,17 @@ auto BufferPoolManager::NewPage() -> page_id_t { UNIMPLEMENTED("TODO(P1): Add im
  * @param page_id The page ID of the page we want to delete.
  * @return `false` if the page exists but could not be deleted, `true` if the page didn't exist or deletion succeeded.
  */
-auto BufferPoolManager::DeletePage(page_id_t page_id) -> bool { UNIMPLEMENTED("TODO(P1): Add implementation."); }
+auto BufferPoolManager::DeletePage(page_id_t page_id) -> bool {
+  if (page_table_.count(page_id) <= 0) {
+    return false;
+  }
+  const auto pin_count = frames_[page_table_[page_id]]->pin_count_.load();
+  if (pin_count > 0) {
+    return false;
+  }
+  disk_scheduler_->DeallocatePage(page_id);
+  return true;
+}
 
 /**
  * @brief Acquires an optional write-locked guard over a page of data. The user can specify an `AccessType` if needed.
@@ -180,7 +193,45 @@ auto BufferPoolManager::DeletePage(page_id_t page_id) -> bool { UNIMPLEMENTED("T
  * returns `std::nullopt`; otherwise, returns a `WritePageGuard` ensuring exclusive and mutable access to a page's data.
  */
 auto BufferPoolManager::CheckedWritePage(page_id_t page_id, AccessType access_type) -> std::optional<WritePageGuard> {
-  UNIMPLEMENTED("TODO(P1): Add implementation.");
+  auto entry = page_table_.find(page_id);
+  if (entry != page_table_.end()) {
+    /*
+     * hit
+     */
+    const frame_id_t frame_id = entry->second;
+    const auto header = frames_[frame_id];
+    replacer_->RecordAccess(frame_id, page_id, access_type);
+    return std::make_optional(WritePageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_));
+  }
+  /*
+   * not hit
+   */
+  if (!free_frames_.empty()) {
+    // has available frames
+    const frame_id_t free_frame_id = free_frames_.front();
+    free_frames_.pop_front();
+    if (page_table_.count(page_id) > 0) {
+      UNIMPLEMENTED("duplicate page_id");
+    }
+    page_table_[page_id] = free_frame_id;
+    replacer_->RecordAccess(free_frame_id, page_id, access_type);
+    const auto header = frames_[free_frame_id];
+    return std::make_optional(WritePageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_));
+  }
+  /*
+   * no available frames, need evicting...
+   */
+  const auto evicted = replacer_->Evict();
+  if (!evicted.has_value()) {
+    // UNIMPLEMENTED("failed to evict");
+    // no available frames and failed to evict any frame
+    return std::nullopt;
+  }
+  const auto frame_id = evicted.value();
+  page_table_[page_id] = frame_id;
+  replacer_->RecordAccess(page_id, frame_id, access_type);
+  const auto header = frames_[frame_id];
+  return std::make_optional(WritePageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_));
 }
 
 /**
@@ -208,7 +259,59 @@ auto BufferPoolManager::CheckedWritePage(page_id_t page_id, AccessType access_ty
  * returns `std::nullopt`; otherwise, returns a `ReadPageGuard` ensuring shared and read-only access to a page's data.
  */
 auto BufferPoolManager::CheckedReadPage(page_id_t page_id, AccessType access_type) -> std::optional<ReadPageGuard> {
-  UNIMPLEMENTED("TODO(P1): Add implementation.");
+  auto entry = page_table_.find(page_id);
+  if (entry != page_table_.end()) {
+    /*
+     * hit
+     */
+    const frame_id_t frame_id = entry->second;
+    const auto header = frames_[frame_id];
+    replacer_->RecordAccess(frame_id, page_id, access_type);
+    return std::make_optional(ReadPageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_));
+  }
+  /*
+   * not hit
+   */
+  if (!free_frames_.empty()) {
+    // has available frames
+    const frame_id_t free_frame_id = free_frames_.front();
+    free_frames_.pop_front();
+    if (page_table_.count(page_id) > 0) {
+      UNIMPLEMENTED("duplicate page_id");
+    }
+    page_table_[page_id] = free_frame_id;
+    replacer_->RecordAccess(free_frame_id, page_id, access_type);
+    // Here is the memory address
+    const auto header = frames_[free_frame_id];
+
+    // read the page from memory
+    auto read_page = disk_scheduler_->CreatePromise();
+    auto await_lock = read_page.get_future();
+    DiskRequest readReq {false, header->GetDataMut(), page_id, std::move(read_page)};
+    std::vector<DiskRequest> v;
+    v.emplace_back(std::move(readReq));
+    disk_scheduler_->Schedule(v);
+    if (!await_lock.get()) {
+      // await
+      UNIMPLEMENTED("read_page_future failed");
+    }
+    return std::make_optional(ReadPageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_));
+  }
+  /*
+   * no available frames, need evicting...
+   */
+  const auto evicted = replacer_->Evict();
+  if (!evicted.has_value()) {
+    // UNIMPLEMENTED("failed to evict");
+    // no available frames and failed to evict any frame
+    return std::nullopt;
+  }
+  // TODO: should I know the evicted page, and remove the (page_id, frame_id) map entry?
+  const auto frame_id = evicted.value();
+  page_table_[page_id] = frame_id;
+  replacer_->RecordAccess(page_id, frame_id, access_type);
+  const auto header = frames_[frame_id];
+  return std::make_optional(ReadPageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_));
 }
 
 /**
@@ -227,12 +330,10 @@ auto BufferPoolManager::CheckedReadPage(page_id_t page_id, AccessType access_typ
  */
 auto BufferPoolManager::WritePage(page_id_t page_id, AccessType access_type) -> WritePageGuard {
   auto guard_opt = CheckedWritePage(page_id, access_type);
-
   if (!guard_opt.has_value()) {
     fmt::println(stderr, "\n`CheckedWritePage` failed to bring in page {}\n", page_id);
     std::abort();
   }
-
   return std::move(guard_opt).value();
 }
 

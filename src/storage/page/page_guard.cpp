@@ -14,6 +14,8 @@
 #include <memory>
 #include "buffer/arc_replacer.h"
 #include "common/macros.h"
+#include "fmt/ostream.h"
+#include "fmt/xchar.h"
 
 namespace bustub {
 
@@ -37,9 +39,7 @@ ReadPageGuard::ReadPageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> fra
       frame_(std::move(frame)),
       replacer_(std::move(replacer)),
       bpm_latch_(std::move(bpm_latch)),
-      disk_scheduler_(std::move(disk_scheduler)) {
-  UNIMPLEMENTED("TODO(P1): Add implementation.");
-}
+      disk_scheduler_(std::move(disk_scheduler)) {is_valid_ = true;}
 
 /**
  * @brief The move constructor for `ReadPageGuard`.
@@ -56,8 +56,15 @@ ReadPageGuard::ReadPageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> fra
  *
  * @param that The other page guard.
  */
-ReadPageGuard::ReadPageGuard(ReadPageGuard &&that) noexcept {}
-
+ReadPageGuard::ReadPageGuard(ReadPageGuard &&that) noexcept
+    : page_id_(that.page_id_),
+      frame_(std::move(that.frame_)),
+      replacer_(std::move(that.replacer_)),
+      bpm_latch_(std::move(that.bpm_latch_)),
+      disk_scheduler_(std::move(that.disk_scheduler_)),
+      is_valid_(that.is_valid_) {
+  that.is_valid_ = false;
+}
 /**
  * @brief The move assignment operator for `ReadPageGuard`.
  *
@@ -119,7 +126,14 @@ void ReadPageGuard::Flush() { UNIMPLEMENTED("TODO(P1): Add implementation."); }
  *
  * TODO(P1): Add implementation.
  */
-void ReadPageGuard::Drop() { UNIMPLEMENTED("TODO(P1): Add implementation."); }
+void ReadPageGuard::Drop() {
+  if (is_valid_) {
+    fmt::println("drop valid ReadPageGuard");
+    // TODO: release the resource
+  } else {
+    fmt::println("drop invalid ReadPageGuard, do nothing");
+  }
+}
 
 /** @brief The destructor for `ReadPageGuard`. This destructor simply calls `Drop()`. */
 ReadPageGuard::~ReadPageGuard() { Drop(); }
@@ -149,7 +163,10 @@ WritePageGuard::WritePageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> f
       replacer_(std::move(replacer)),
       bpm_latch_(std::move(bpm_latch)),
       disk_scheduler_(std::move(disk_scheduler)) {
-  UNIMPLEMENTED("TODO(P1): Add implementation.");
+  fmt::println("[WritePageGuard] construct set valid flag");
+  is_valid_ = true;
+  frame_->pin_count_.fetch_add(1);
+  fmt::println("[WritePageGuard] construct page {} pin counter = {}", page_id_, frame_->pin_count_.load());
 }
 
 /**
@@ -167,7 +184,15 @@ WritePageGuard::WritePageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> f
  *
  * @param that The other page guard.
  */
-WritePageGuard::WritePageGuard(WritePageGuard &&that) noexcept {}
+WritePageGuard::WritePageGuard(WritePageGuard &&that) noexcept
+    : page_id_(that.page_id_),
+      frame_(std::move(that.frame_)),
+      replacer_(std::move(that.replacer_)),
+      bpm_latch_(std::move(that.bpm_latch_)),
+      disk_scheduler_(std::move(that.disk_scheduler_)),
+      is_valid_(that.is_valid_) {
+  that.is_valid_ = false;
+}
 
 /**
  * @brief The move assignment operator for `WritePageGuard`.
@@ -238,7 +263,15 @@ void WritePageGuard::Flush() { UNIMPLEMENTED("TODO(P1): Add implementation."); }
  *
  * TODO(P1): Add implementation.
  */
-void WritePageGuard::Drop() { UNIMPLEMENTED("TODO(P1): Add implementation."); }
+void WritePageGuard::Drop() {
+  if (is_valid_) {
+    // TODO: release the resource
+    frame_->pin_count_.fetch_add(-1);
+    fmt::println("[WritePageGuard] drop: page {} pin counter = {}", page_id_, frame_->pin_count_.load());
+  } else {
+    fmt::println("[WritePageGuard] drop invalid WritePageGuard, do nothing");
+  }
+}
 
 /** @brief The destructor for `WritePageGuard`. This destructor simply calls `Drop()`. */
 WritePageGuard::~WritePageGuard() { Drop(); }

@@ -56,7 +56,6 @@ TEST(BufferPoolManagerTest, VeryBasicTest) {
     const auto guard = bpm->ReadPage(pid);
     EXPECT_STREQ(guard.GetData(), str.c_str());
   }
-
   ASSERT_TRUE(bpm->DeletePage(pid));
 }
 
