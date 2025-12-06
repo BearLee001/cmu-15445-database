@@ -176,11 +176,12 @@ class WritePageGuard {
     return reinterpret_cast<T *>(GetDataMut());
   }
   auto IsDirty() const -> bool;
+  auto IsValid() const -> bool;
   void Flush();
   void Drop();
   ~WritePageGuard();
 
- private:
+ public:
   /** @brief Only the buffer pool manager is allowed to construct a valid `WritePageGuard.` */
   explicit WritePageGuard(page_id_t page_id,
                          std::shared_ptr<FrameHeader> frame,

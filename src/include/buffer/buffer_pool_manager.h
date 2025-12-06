@@ -64,7 +64,7 @@ class FrameHeader {
  public:
   explicit FrameHeader(frame_id_t frame_id);
 
- private:
+ public:
   auto GetData() const -> const char *;
   auto GetDataMut() -> char *;
   void Reset();
@@ -129,7 +129,7 @@ class BufferPoolManager {
   auto EvictAndWriteback() -> std::optional<frame_id_t>;
   void WriteBack(char *data, page_id_t page_id);
   void ReadFromDisk(char *data, page_id_t page_id);
- private:
+ public:
   /** @brief The number of frames in the buffer pool. */
   const size_t num_frames_;
 

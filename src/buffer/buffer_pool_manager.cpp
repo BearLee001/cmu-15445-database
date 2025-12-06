@@ -145,13 +145,10 @@ auto BufferPoolManager::NewPage() -> page_id_t {
  */
 auto BufferPoolManager::DeletePage(page_id_t page_id) -> bool {
   if (page_table_.count(page_id) <= 0) {
-    fmt::println("1");
     return false;
   }
   const auto pin_count = frames_[page_table_[page_id]]->pin_count_.load();
   if (pin_count > 0) {
-    fmt::println("2");
-    fmt::println("frame id = {}", page_table_[page_id]);
     return false;
   }
   disk_scheduler_->DeallocatePage(page_id);
@@ -205,6 +202,7 @@ auto BufferPoolManager::CheckedWritePage(page_id_t page_id, AccessType access_ty
      */
     const frame_id_t frame_id = entry->second;
     const auto header = frames_[frame_id];
+    header->page_id_ = page_id;
     header->pin_count_.fetch_add(1);
     replacer_->RecordAccess(frame_id, page_id, access_type);
     replacer_->SetEvictable(frame_id, false);
@@ -279,6 +277,7 @@ auto BufferPoolManager::CheckedReadPage(page_id_t page_id, AccessType access_typ
      */
     const frame_id_t frame_id = entry->second;
     const auto header = frames_[frame_id];
+    header->page_id_ = page_id;
     header->pin_count_.fetch_add(1);
     replacer_->RecordAccess(frame_id, page_id, access_type);
     replacer_->SetEvictable(frame_id, false);

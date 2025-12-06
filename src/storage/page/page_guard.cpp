@@ -229,7 +229,29 @@ WritePageGuard::WritePageGuard(WritePageGuard &&that) noexcept
  * @param that The other page guard.
  * @return WritePageGuard& The newly valid `WritePageGuard`.
  */
-auto WritePageGuard::operator=(WritePageGuard &&that) noexcept -> WritePageGuard & { return *this; }
+auto WritePageGuard::operator=(WritePageGuard &&that) noexcept -> WritePageGuard & {
+  if (this == &that) {
+    return *this;
+  }
+
+  this->Drop();
+
+  this->page_id_ = that.page_id_;
+
+  this->frame_ = std::move(that.frame_);
+  this->replacer_ = std::move(that.replacer_);
+  this->bpm_latch_ = std::move(that.bpm_latch_);
+  this->disk_scheduler_ = std::move(that.disk_scheduler_);
+
+  this->free_frames_ = that.free_frames_;
+  this->page_table_ = that.page_table_;
+
+  this->is_valid_ = that.is_valid_;
+
+  that.is_valid_ = false;
+
+  return *this;
+}
 
 /**
  * @brief Gets the page ID of the page this guard is protecting.
@@ -261,6 +283,13 @@ auto WritePageGuard::GetDataMut() -> char * {
 auto WritePageGuard::IsDirty() const -> bool {
   BUSTUB_ENSURE(is_valid_, "tried to use an invalid write guard");
   return frame_->is_dirty_;
+}
+
+/**
+ * @brief Returns the page guard's state(debug)
+ */
+auto WritePageGuard::IsValid() const -> bool {
+  return is_valid_;
 }
 
 /**
