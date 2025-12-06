@@ -144,12 +144,8 @@ void ReadPageGuard::Drop() {
       frame_->pin_count_.fetch_sub(1);
       if (frame_->pin_count_.load() == 0) {
         replacer_->SetEvictable(frame_->frame_id_, true);
-        fmt::println("[Drop] {} is set evictable", frame_->frame_id_);
       }
     }
-    fmt::println("[ReadPageGuard] drop: page {} pin counter = {}", page_id_, frame_->pin_count_.load());
-  } else {
-    fmt::println("drop invalid ReadPageGuard, do nothing");
   }
 }
 
@@ -187,10 +183,8 @@ WritePageGuard::WritePageGuard(page_id_t page_id,
       disk_scheduler_(std::move(disk_scheduler)),
       free_frames_(&free_frames),
       page_table_(&page_table_) {
-  fmt::println("[WritePageGuard] construct set valid flag");
   is_valid_ = true;
   frame_->pin_count_.fetch_add(1);
-  fmt::println("[WritePageGuard] construct page {} pin counter = {}", page_id_, frame_->pin_count_.load());
 }
 
 /**
@@ -296,11 +290,7 @@ void WritePageGuard::Drop() {
       frame_->pin_count_.fetch_sub(1);
       if (frame_->pin_count_.load() == 0) {
         replacer_->SetEvictable(frame_->frame_id_, true);
-        fmt::println("[Drop] {} is set evictable", frame_->frame_id_);
       }
-      fmt::println("[WritePageGuard] drop: page {} pin counter = {}", page_id_, frame_->pin_count_.load());
-    } else {
-      fmt::println("[WritePageGuard] drop invalid WritePageGuard, do nothing");
     }
   }
 }

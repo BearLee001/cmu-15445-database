@@ -45,7 +45,6 @@ ArcReplacer::ArcReplacer(size_t num_frames) : replacer_size_(num_frames) {}
  * @return frame id of the evicted frame, or std::nullopt if cannot evict
  */
 auto ArcReplacer::Evict() -> std::optional<frame_id_t> {
-  DumpState(true);
   std::optional<frame_id_t> removed;
   if (mru_.size() < mru_target_size_) {
     // try to remove from mfu
@@ -79,7 +78,6 @@ auto ArcReplacer::Evict() -> std::optional<frame_id_t> {
     }
   }
   --curr_size_;
-  std::cout << "evict" << std::endl;
   DumpState();
   return removed;
 
@@ -158,7 +156,6 @@ void ArcReplacer::RecordAccess(frame_id_t frame_id, page_id_t page_id, [[maybe_u
     throw std::runtime_error("Unexpected state(2)");
   }
 
-  std::cout << "miss" << std::endl;
   // miss
   if (mru_.size() + mru_ghost_.size() == replacer_size_) {
     // kill last mru_ghost element
@@ -344,8 +341,6 @@ auto ArcReplacer::TryGetEvictableFrom(std::list<frame_id_t>& list_) -> std::opti
     frame_id_t frame_id_tmp = *it;
     if (alive_map_[frame_id_tmp]->evictable_) {
       return frame_id_tmp;
-    } else {
-      fmt::println("[TryGetEvictableFrom] frame_id {} is not evictable", frame_id_tmp);
     }
   }
   return std::nullopt;
