@@ -47,7 +47,6 @@ ReadPageGuard::ReadPageGuard(page_id_t page_id,
       free_frames_(&free_frames),
       page_table_(&page_table_) {
   is_valid_ = true;
-  frame_->pin_count_.fetch_add(1);
 }
 
 /**
@@ -184,7 +183,6 @@ WritePageGuard::WritePageGuard(page_id_t page_id,
       free_frames_(&free_frames),
       page_table_(&page_table_) {
   is_valid_ = true;
-  frame_->pin_count_.fetch_add(1);
 }
 
 /**
