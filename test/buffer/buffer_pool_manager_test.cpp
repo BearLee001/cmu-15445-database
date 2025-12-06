@@ -14,6 +14,8 @@
 #include <filesystem>
 
 #include "buffer/buffer_pool_manager.h"
+
+#include "fmt/xchar.h"
 #include "gtest/gtest.h"
 #include "storage/page/page_guard.h"
 
@@ -102,6 +104,7 @@ TEST(BufferPoolManagerTest, PagePinEasyTest) {
     ASSERT_EQ(0, bpm->GetPinCount(pageid1));
   }
 
+  fmt::println("--------------1");
   {
     const auto temp_page_id1 = bpm->NewPage();
     const auto temp_page1_opt = bpm->CheckedReadPage(temp_page_id1);
@@ -115,6 +118,7 @@ TEST(BufferPoolManagerTest, PagePinEasyTest) {
     ASSERT_FALSE(bpm->GetPinCount(pageid1).has_value());
   }
 
+  fmt::println("--------------2");
   {
     auto page0_write_opt = bpm->CheckedWritePage(pageid0);
     ASSERT_TRUE(page0_write_opt.has_value());

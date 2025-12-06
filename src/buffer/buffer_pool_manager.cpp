@@ -15,6 +15,7 @@
 #include "common/config.h"
 #include "common/macros.h"
 #include "fmt/ostream.h"
+#include "fmt/xchar.h"
 
 namespace bustub {
 
@@ -25,7 +26,7 @@ namespace bustub {
  *
  * @param frame_id The frame ID / index of the frame we are creating a header for.
  */
-FrameHeader::FrameHeader(frame_id_t frame_id) : frame_id_(frame_id), data_(BUSTUB_PAGE_SIZE, 0) { Reset(); }
+FrameHeader::FrameHeader(frame_id_t frame_id) : frame_id_(frame_id), data_(BUSTUB_PAGE_SIZE, 0), page_id_(-1) { Reset(); }
 
 /**
  * @brief Get a raw const pointer to the frame's data.
@@ -119,7 +120,9 @@ auto BufferPoolManager::Size() const -> size_t { return num_frames_; }
  * @return The page ID of the newly allocated page.
  */
 auto BufferPoolManager::NewPage() -> page_id_t {
-  return next_page_id_.fetch_add(1);
+  const auto id = next_page_id_.fetch_add(1);
+  fmt::println("[NewPage] new page id {}", id);
+  return id;
 }
 
 /**
@@ -193,21 +196,26 @@ auto BufferPoolManager::DeletePage(page_id_t page_id) -> bool {
  * returns `std::nullopt`; otherwise, returns a `WritePageGuard` ensuring exclusive and mutable access to a page's data.
  */
 auto BufferPoolManager::CheckedWritePage(page_id_t page_id, AccessType access_type) -> std::optional<WritePageGuard> {
+  fmt::println("[CheckedWritePage] begins...");
   auto entry = page_table_.find(page_id);
   if (entry != page_table_.end()) {
     /*
      * hit
      */
+    fmt::println("[CheckedWritePage] hit!!!");
     const frame_id_t frame_id = entry->second;
     const auto header = frames_[frame_id];
     replacer_->RecordAccess(frame_id, page_id, access_type);
-    return std::make_optional(WritePageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_));
+    replacer_->SetEvictable(frame_id, false);
+    fmt::println("[CheckedWritePage] {} is set not evictable", frame_id);
+    return std::make_optional(WritePageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_, free_frames_, page_table_));
   }
   /*
    * not hit
    */
   if (!free_frames_.empty()) {
     // has available frames
+    fmt::println("[CheckedWritePage] not hit, but has available frames.");
     const frame_id_t free_frame_id = free_frames_.front();
     free_frames_.pop_front();
     if (page_table_.count(page_id) > 0) {
@@ -215,23 +223,31 @@ auto BufferPoolManager::CheckedWritePage(page_id_t page_id, AccessType access_ty
     }
     page_table_[page_id] = free_frame_id;
     replacer_->RecordAccess(free_frame_id, page_id, access_type);
+    replacer_->SetEvictable(free_frame_id, false);
+    fmt::println("[CheckedWritePage] {} is set not evictable", free_frame_id);
     const auto header = frames_[free_frame_id];
-    return std::make_optional(WritePageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_));
+    header->page_id_ = page_id;
+    ReadFromDisk(header->GetDataMut(), page_id);
+    return std::make_optional(WritePageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_, free_frames_, page_table_));
   }
   /*
    * no available frames, need evicting...
    */
-  const auto evicted = replacer_->Evict();
-  if (!evicted.has_value()) {
-    // UNIMPLEMENTED("failed to evict");
-    // no available frames and failed to evict any frame
+  fmt::println("[CheckedWritePage] not hit and no available frames, need evicting.");
+
+  const auto frame_id_opt = EvictAndWriteback();
+  if (!frame_id_opt.has_value()) {
     return std::nullopt;
   }
-  const auto frame_id = evicted.value();
+  const auto frame_id = frame_id_opt.value();
   page_table_[page_id] = frame_id;
-  replacer_->RecordAccess(page_id, frame_id, access_type);
+  replacer_->RecordAccess(frame_id, page_id, access_type);
+  replacer_->SetEvictable(frame_id, false);
+  fmt::println("[CheckedWritePage] {} is set not evictable", frame_id);
   const auto header = frames_[frame_id];
-  return std::make_optional(WritePageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_));
+  header->page_id_ = page_id;
+  ReadFromDisk(header->GetDataMut(), page_id);
+  return std::make_optional(WritePageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_, free_frames_, page_table_));
 }
 
 /**
@@ -264,16 +280,20 @@ auto BufferPoolManager::CheckedReadPage(page_id_t page_id, AccessType access_typ
     /*
      * hit
      */
+    fmt::println("[CheckReadPage] hit!");
     const frame_id_t frame_id = entry->second;
     const auto header = frames_[frame_id];
     replacer_->RecordAccess(frame_id, page_id, access_type);
-    return std::make_optional(ReadPageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_));
+    replacer_->SetEvictable(frame_id, false);
+    fmt::println("[CheckedReadPage] {} is set not evictable", frame_id);
+    return std::make_optional(ReadPageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_, free_frames_, page_table_));
   }
   /*
    * not hit
    */
   if (!free_frames_.empty()) {
     // has available frames
+    fmt::println("[CheckReadPage] not hit but has available frames...");
     const frame_id_t free_frame_id = free_frames_.front();
     free_frames_.pop_front();
     if (page_table_.count(page_id) > 0) {
@@ -281,37 +301,31 @@ auto BufferPoolManager::CheckedReadPage(page_id_t page_id, AccessType access_typ
     }
     page_table_[page_id] = free_frame_id;
     replacer_->RecordAccess(free_frame_id, page_id, access_type);
+    replacer_->SetEvictable(free_frame_id, false);
+    fmt::println("[CheckedReadPage] {} is set not evictable", free_frame_id);
     // Here is the memory address
     const auto header = frames_[free_frame_id];
-
-    // read the page from memory
-    auto read_page = disk_scheduler_->CreatePromise();
-    auto await_lock = read_page.get_future();
-    DiskRequest readReq {false, header->GetDataMut(), page_id, std::move(read_page)};
-    std::vector<DiskRequest> v;
-    v.emplace_back(std::move(readReq));
-    disk_scheduler_->Schedule(v);
-    if (!await_lock.get()) {
-      // await
-      UNIMPLEMENTED("read_page_future failed");
-    }
-    return std::make_optional(ReadPageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_));
+    header->page_id_ = page_id;
+    ReadFromDisk(header->GetDataMut(), page_id);
+    return std::make_optional(ReadPageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_, free_frames_, page_table_));
   }
   /*
    * no available frames, need evicting...
    */
-  const auto evicted = replacer_->Evict();
-  if (!evicted.has_value()) {
-    // UNIMPLEMENTED("failed to evict");
-    // no available frames and failed to evict any frame
+  fmt::println("[CheckReadPage] not hit and no available frames, need evicting...");
+  const auto frame_id_opt = EvictAndWriteback();
+  if (!frame_id_opt.has_value()) {
     return std::nullopt;
   }
-  // TODO: should I know the evicted page, and remove the (page_id, frame_id) map entry?
-  const auto frame_id = evicted.value();
+  const auto frame_id = frame_id_opt.value();
   page_table_[page_id] = frame_id;
-  replacer_->RecordAccess(page_id, frame_id, access_type);
+  replacer_->RecordAccess(frame_id, page_id, access_type);
+  replacer_->SetEvictable(frame_id, false);
+  fmt::println("[CheckedReadPage] {} is set not evictable", frame_id);
   const auto header = frames_[frame_id];
-  return std::make_optional(ReadPageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_));
+  header->page_id_ = page_id;
+  ReadFromDisk(header->GetDataMut(), page_id);
+  return std::make_optional(ReadPageGuard(page_id, header, replacer_, bpm_latch_, disk_scheduler_, free_frames_, page_table_));
 }
 
 /**
@@ -457,7 +471,59 @@ void BufferPoolManager::FlushAllPages() { UNIMPLEMENTED("TODO(P1): Add implement
  * @return std::optional<size_t> The pin count if the page exists; otherwise, `std::nullopt`.
  */
 auto BufferPoolManager::GetPinCount(page_id_t page_id) -> std::optional<size_t> {
-  UNIMPLEMENTED("TODO(P1): Add implementation.");
+  fmt::println("[GetPinCount] page_id = {}", page_id);
+  if (page_table_.count(page_id) > 0) {
+    fmt::println("[GetPinCount] page_table_ size = {}", page_table_.size());
+    const frame_id_t frame_id = page_table_[page_id];
+    const auto frame = frames_[frame_id];
+    return std::make_optional(frame->pin_count_.load());
+  }
+  return std::nullopt;
 }
 
+auto BufferPoolManager::EvictAndWriteback() -> std::optional<frame_id_t> {
+  const auto evicted = replacer_->Evict();
+  if (!evicted.has_value()) {
+    // UNIMPLEMENTED("failed to evict");
+    // no available frames and failed to evict any frame
+    return std::nullopt;
+  }
+  const auto frame_id = evicted.value();
+  if (frames_[frame_id]->pin_count_ > 0) {
+    // This frame is used, should not be replaced by the page.
+    return std::nullopt;
+  }
+  // Release the evicted page
+  page_table_.erase(frames_[frame_id]->page_id_);
+  WriteBack(frames_[frame_id]->GetDataMut(), frames_[frame_id]->page_id_);
+  return std::make_optional(frame_id);
+}
+
+void BufferPoolManager::WriteBack(char *data, page_id_t page_id) {
+  // Write back to disk
+  auto write_page = disk_scheduler_->CreatePromise();
+  auto await_lock = write_page.get_future();
+  DiskRequest writeReq {true, data, page_id, std::move(write_page)};
+  std::vector<DiskRequest> v;
+  v.emplace_back(std::move(writeReq));
+  disk_scheduler_->Schedule(v);
+  if (!await_lock.get()) {
+    // await
+    UNIMPLEMENTED("read_page_future failed");
+  }
+}
+
+void BufferPoolManager::ReadFromDisk(char *data, page_id_t page_id) {
+  // Read page from the disk
+  auto read_page = disk_scheduler_->CreatePromise();
+  auto await_lock = read_page.get_future();
+  DiskRequest readReq {false, data, page_id, std::move(read_page)};
+  std::vector<DiskRequest> v;
+  v.emplace_back(std::move(readReq));
+  disk_scheduler_->Schedule(v);
+  if (!await_lock.get()) {
+    // await
+    UNIMPLEMENTED("read_page_future failed");
+  }
+}
 }  // namespace bustub
