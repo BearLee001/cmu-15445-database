@@ -115,10 +115,12 @@ auto ArcReplacer::Evict() -> std::optional<frame_id_t> {
  * leaderboard tests.
  */
 void ArcReplacer::RecordAccess(frame_id_t frame_id, page_id_t page_id, [[maybe_unused]] AccessType access_type) {
+  latch_.lock();
   if (LookUp(frame_id, page_id) != nullptr) {
     // hit alive
     Move2First(frame_id);
     DumpState();
+    latch_.unlock();
     return;
   }
 
@@ -133,9 +135,9 @@ void ArcReplacer::RecordAccess(frame_id_t frame_id, page_id_t page_id, [[maybe_u
         mru_target_size_ += mfu_ghost_.size() / mru_ghost_.size();
         mru_target_size_ = mru_target_size_ > replacer_size_ ? replacer_size_ : mru_target_size_;
       }
-      std::cout << "hit ghost" << std::endl;
       MoveGhost2First(frame_id, page_id);
       DumpState();
+      latch_.unlock();
       return;
     }
 
@@ -148,11 +150,12 @@ void ArcReplacer::RecordAccess(frame_id_t frame_id, page_id_t page_id, [[maybe_u
         mru_target_size_ -= mru_ghost_.size() / mfu_ghost_.size();
         mru_target_size_ = mru_target_size_ <= 0 ? 0 : mru_target_size_;
       }
-      std::cout << "hit ghost" << std::endl;
       MoveGhost2First(frame_id, page_id);
       DumpState();
+      latch_.unlock();
       return;
     }
+    latch_.unlock();
     throw std::runtime_error("Unexpected state(2)");
   }
 
@@ -186,6 +189,7 @@ void ArcReplacer::RecordAccess(frame_id_t frame_id, page_id_t page_id, [[maybe_u
   }
   ++curr_size_;
   DumpState();
+  latch_.unlock();
 }
 
 /**
@@ -206,6 +210,7 @@ void ArcReplacer::RecordAccess(frame_id_t frame_id, page_id_t page_id, [[maybe_u
  * @param set_evictable whether the given frame is evictable or not
  */
 void ArcReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
+  latch_.lock();
   auto it = alive_map_.find(frame_id);
   if (it != alive_map_.end()) {
     if (it->second->evictable_ == false && set_evictable == true) {
@@ -215,8 +220,10 @@ void ArcReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
     }
     it->second->evictable_ = set_evictable;
   } else {
+    latch_.unlock();
     throw std::runtime_error("Unexpected state(5)");
   }
+  latch_.unlock();
 }
 
 /**

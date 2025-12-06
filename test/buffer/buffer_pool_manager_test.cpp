@@ -72,7 +72,6 @@ TEST(BufferPoolManagerTest, PagePinEasyTest) {
   const std::string str1 = "page1";
   const std::string str0updated = "page0updated";
   const std::string str1updated = "page1updated";
-
   {
     auto page0_write_opt = bpm->CheckedWritePage(pageid0);
     ASSERT_TRUE(page0_write_opt.has_value());

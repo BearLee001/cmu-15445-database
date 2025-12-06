@@ -47,6 +47,7 @@ ReadPageGuard::ReadPageGuard(page_id_t page_id,
       free_frames_(&free_frames),
       page_table_(&page_table_) {
   is_valid_ = true;
+  frame_->rwlatch_.lock();
 }
 
 /**
@@ -92,7 +93,29 @@ ReadPageGuard::ReadPageGuard(ReadPageGuard &&that) noexcept
  * @param that The other page guard.
  * @return ReadPageGuard& The newly valid `ReadPageGuard`.
  */
-auto ReadPageGuard::operator=(ReadPageGuard &&that) noexcept -> ReadPageGuard & { return *this; }
+auto ReadPageGuard::operator=(ReadPageGuard &&that) noexcept -> ReadPageGuard & {
+  if (this == &that) {
+    return *this;
+  }
+
+  this->Drop();
+
+  this->page_id_ = that.page_id_;
+
+  this->frame_ = std::move(that.frame_);
+  this->replacer_ = std::move(that.replacer_);
+  this->bpm_latch_ = std::move(that.bpm_latch_);
+  this->disk_scheduler_ = std::move(that.disk_scheduler_);
+
+  this->free_frames_ = that.free_frames_;
+  this->page_table_ = that.page_table_;
+
+  this->is_valid_ = that.is_valid_;
+
+  that.is_valid_ = false;
+
+  return *this;
+}
 
 /**
  * @brief Gets the page ID of the page this guard is protecting.
@@ -145,6 +168,8 @@ void ReadPageGuard::Drop() {
         replacer_->SetEvictable(frame_->frame_id_, true);
       }
     }
+    frame_->rwlatch_.unlock();
+    is_valid_ = false;
   }
 }
 
@@ -183,6 +208,7 @@ WritePageGuard::WritePageGuard(page_id_t page_id,
       free_frames_(&free_frames),
       page_table_(&page_table_) {
   is_valid_ = true;
+  frame_->rwlatch_.lock();
 }
 
 /**
@@ -319,6 +345,8 @@ void WritePageGuard::Drop() {
         replacer_->SetEvictable(frame_->frame_id_, true);
       }
     }
+    frame_->rwlatch_.unlock();
+    is_valid_ = false;
   }
 }
 
